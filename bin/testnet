@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+# -*- mode: python -*-
+import argparse
+import sys
+import subprocess
+import os
+import tempfile
+import codecs
+import json
+import re
+
+_hex = codecs.getencoder('hex')
+
+
+def port(n: str) -> int:
+	"""Return n as an int if n is a valid port number."""
+	try:
+		p = int(n)
+	except ValueError as exc:
+		raise argparse.ArgumentError('invalid value for port!') from exc
+
+	if 0 < p < 65536:
+		return p
+	else:
+		raise argparse.ArgumentError('port value out of range!')
+
+
+def randhex(n: int) -> str:
+	return _hex(os.urandom(n))[0].decode()
+
+
+def random_genesis() -> dict:
+	"""Returns a genesis object with random extraData and nonce."""
+	return {'alloc': {},
+			'mixhash': '0x0000000000000000000000000000000000000000000000000000000000000000',
+			'extraData': '0x' + randhex(32),
+			'difficulty': '0x1',
+			'parentHash': '0x0000000000000000000000000000000000000000000000000000000000000000',
+			'coinbase': '0x0000000000000000000000000000000000000000',
+			'nonce': '0x' + randhex(8),
+			'gasLimit': '0x16e360',
+			'timestamp': '0x00'}	
+
+
+def random_name() -> str:
+	"""Returns a random 'name' for the node.
+
+	WARNING: This potentially opens a large text file
+	and loads it into a list every time it is called.
+	"""
+	words_locations = (('usr', 'share', 'dict', 'words'),
+					   ('usr', 'dict', 'words'),
+					   ('usr', 'share', 'dict', 'american-english')) # ubuntu
+	for location in words_locations:
+		path = os.path.join(*location)
+		if os.path.isfile(path):
+			break
+	else:  # no word file means you get a random tag instead
+		return randhex(2)
+
+	all_words = list(map(str.strip, open(path)))
+	return random.choice(all_words) + random.choice(all_words).capitalize()
+
+
+def main(argv: str) -> int:
+	parser = argparse.ArgumentParser(argv[0])
+	parser.add_argument('-H', '--rpchost', help='host for RPC server.', default='127.0.0.1')
+	parser.add_argument('-P', '--rpcport', help='port for RPC server.', default=8545, type=port)
+	peers = parser.add_mutually_exclusive_group()
+	peers.add_argument('-p', '--port', help='port for connecting to peers', default=None, type=port)
+	peers.add_argument('-n', --nopeers', help='Don\'t listen for peers.',
+						action='store_true', default=False)
+	parser.add_argument('--temp', help='Use a temporary directory which is removed when the node shuts down.',
+						action='store_true', default=False)
+	parser.add_argument('--testdir', help='Use this directory to hold the datadir of the node.', os.)
+	client = parser.add_mutually_exclusive_group()
+	client.add_argument('--parity')
+	client.add_argument('--geth')
+	args = parser.parse_args(argv[1:])
+
+	if args.temp:
+		tempdir = tempfile.TemporaryDirectory()
+		datadir = tempdir.name
+	else:
+		if os.path.isdir(testnet_root):
+			testnet_root = os.path.join(os.path.expanduser('~'),
+								'.testnet')
+			node_name = random_name()
+			datadir = os.path.join(testnet_root,
+								   'Geth-'+node_name)
+
+	password = os.path.join(datadir, 'password')
+	with open(password, 'w') as pf:
+		pf.write(randhex(32))
+
+	genesis = os.path.join(datadir, 'genesis.json')
+	with open(genesis, 'w') as gf:
+		json.dump(random_genesis(), gf)
+
+	subprocess.run(['geth',
+					'--password', password,
+					'--datadir', datadir,
+					'account new'])
+
+	geth = subprocess.Popen(['geth',
+							 '--password', password,
+							 '--genesis, genesis',
+							 '--rpchost', args.rpchost,
+							 '--rpcport', args.rpcport,
+							 '--unlock', 0],
+							stdin=subprocess.DEVNULL)
